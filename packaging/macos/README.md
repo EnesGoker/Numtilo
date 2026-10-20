@@ -1,6 +1,6 @@
 [English](README.md) | [Türkçe](README.tr.md)
 
-# Numtilo 0.2.1 — macOS
+# Numtilo 0.2.2 — macOS
 
 Extract the entire ZIP, then double-click **Numtilo.app** in Finder.
 No terminal, VS Code, CMake or Homebrew is required to play.
