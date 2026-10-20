@@ -97,7 +97,7 @@ class RuntimeDependencyTests(unittest.TestCase):
         executable = self.package / ("Numtilo.exe" if system == "Windows" else "numtilo")
         executable.write_bytes(b"synthetic fixture executable; never launched\n")
         self.write_files(files)
-        paths = [str(value) if Path(value).is_absolute() else str(self.package / value)
+        paths = [(Path(value) if Path(value).is_absolute() else self.package / value).as_posix()
                  for value in resolved]
         marker = self.directory / "scanner-called"
         lines = [
@@ -109,8 +109,9 @@ class RuntimeDependencyTests(unittest.TestCase):
             "set(fixture_package " + bracket(self.package.as_posix()) + ")",
         ]
         for name, candidates in (conflict_paths or {}).items():
-            candidate_paths = [str(value) if Path(value).is_absolute()
-                               else str(self.package / value) for value in candidates]
+            candidate_paths = [
+                (Path(value) if Path(value).is_absolute() else self.package / value).as_posix()
+                for value in candidates]
             lines.append("set(fixture_conflict_" + name + " "
                          + bracket(";".join(candidate_paths)) + ")")
         lines += [
