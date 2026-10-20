@@ -392,18 +392,17 @@ std::vector<AccessibilityNode> SplashScene::accessibilityNodes() const {
     field.required = field.editable = field.focusable = true;
     field.focused = focus_ == FocusTarget::Name;
     field.actions = {AccessibilityActionKind::Focus, AccessibilityActionKind::SetValue};
-    return {
-        accessibleNode("title", AccessibilityRole::StaticText, accessibleUtf8(title_.getString()),
-                       title_.getGlobalBounds()),
-        accessibleNode("description", AccessibilityRole::StaticText,
-                       accessibleUtf8(subtitle_.getString()), subtitle_.getGlobalBounds()),
-        field,
-        accessibleButton("start", "Oyuna Başla",
-                         controlBounds(startButton_, theme::sizes::kButtonBorder),
-                         focus_ == FocusTarget::Start),
-        accessibleButton("scores", "Skorlar",
-                         controlBounds(scoresButton_, theme::sizes::kButtonBorder),
-                         focus_ == FocusTarget::Scores)};
+    return {accessibleNode("title", AccessibilityRole::StaticText,
+                           accessibleUtf8(title_.getString()), title_.getGlobalBounds()),
+            accessibleNode("description", AccessibilityRole::StaticText,
+                           accessibleUtf8(subtitle_.getString()), subtitle_.getGlobalBounds()),
+            field,
+            accessibleButton("start", "Oyuna Başla",
+                             controlBounds(startButton_, theme::sizes::kButtonBorder),
+                             focus_ == FocusTarget::Start),
+            accessibleButton("scores", "Skorlar",
+                             controlBounds(scoresButton_, theme::sizes::kButtonBorder),
+                             focus_ == FocusTarget::Scores)};
 }
 
 bool SplashScene::focusAccessible(const std::string_view id) {
