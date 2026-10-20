@@ -2,8 +2,7 @@
 
 ## Workflow
 
-The new Numtilo GitHub repository is pending creation. GitHub fork/PR and branch-protection
-steps below apply once its actual repository address is available.
+The project repository is [EnesGoker/Numtilo](https://github.com/EnesGoker/Numtilo).
 
 1. Fork/branch from `main`.
 2. Make a focused change.
@@ -60,11 +59,10 @@ ctest --test-dir build/vcpkg-debug -C Debug --output-on-failure
 Apply branch protection rules for `main` (required checks + review gate):
 
 ```bash
-./scripts/apply_branch_protection.sh OWNER/REPO
+./scripts/apply_branch_protection.sh EnesGoker/Numtilo
 ```
 
-Replace `OWNER/REPO` with the verified repository after creation. If `origin` points to
-that GitHub repository, the repo argument can be omitted:
+If `origin` points to this GitHub repository, the repo argument can be omitted:
 
 ```bash
 ./scripts/apply_branch_protection.sh

@@ -43,7 +43,7 @@ body:
     attributes:
       label: Environment
       description: OS, compiler, build preset, and version/tag
-      placeholder: macOS 15, AppleClang 17, vcpkg-debug, v0.1.0
+      placeholder: macOS 15, AppleClang 17, vcpkg-debug, v0.2.1
     validations:
       required: true
 

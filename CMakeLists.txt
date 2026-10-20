@@ -428,14 +428,15 @@ if (NUMTILO_BUILD_APP)
     if (APPLE AND NUMTILO_MACOS_BUNDLE)
         install(TARGETS numtilo BUNDLE DESTINATION . COMPONENT Runtime)
     else()
+        include(cmake/RuntimeDependencies.cmake)
         install(TARGETS numtilo
             RUNTIME_DEPENDENCY_SET numtilo_runtime_deps
             RUNTIME DESTINATION . COMPONENT Runtime
         )
         install(RUNTIME_DEPENDENCY_SET numtilo_runtime_deps
-            PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-"
-                "$<$<PLATFORM_ID:Windows>:^hvsifiletrust\\.dll$>"
-            POST_EXCLUDE_REGEXES ".*/[Ss][Yy][Ss][Tt][Ee][Mm]32/.*\\.dll" ".*/usr/lib/.*" ".*/System/Library/.*"
+            PRE_EXCLUDE_REGEXES ${NUMTILO_RUNTIME_PRE_EXCLUDE_REGEXES}
+            POST_INCLUDE_REGEXES ${NUMTILO_RUNTIME_POST_INCLUDE_REGEXES}
+            POST_EXCLUDE_REGEXES ${NUMTILO_RUNTIME_POST_EXCLUDE_REGEXES}
             RUNTIME DESTINATION . COMPONENT Runtime
             LIBRARY DESTINATION . COMPONENT Runtime
         )
@@ -554,6 +555,14 @@ if (BUILD_TESTING)
 
         find_package(Python3 COMPONENTS Interpreter QUIET)
         if (Python3_Interpreter_FOUND AND NOT CMAKE_CROSSCOMPILING)
+            add_test(
+                NAME runtime_dependency_controls
+                COMMAND "${Python3_EXECUTABLE}" -B -m unittest discover
+                        -s "${CMAKE_CURRENT_SOURCE_DIR}/scripts/tests"
+                        -p test_runtime_dependencies.py -v
+            )
+            set_tests_properties(runtime_dependency_controls PROPERTIES
+                LABELS "packaging" TIMEOUT 60)
             add_test(
                 NAME platform_acceptance
                 COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_platform.py"

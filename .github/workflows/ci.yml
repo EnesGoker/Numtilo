@@ -496,6 +496,19 @@ jobs:
         if: runner.os != 'Windows'
         run: ccache --show-stats
 
+      - name: Upload platform acceptance evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: platform-acceptance-${{ matrix.os }}
+          path: |
+            build/vcpkg-debug/platform-acceptance-*/**/report.json
+            build/vcpkg-debug/platform-acceptance-*/**/*.stdout
+            build/vcpkg-debug/platform-acceptance-*/**/*.stderr
+            build/vcpkg-debug/platform-acceptance-*/**/*.command.json
+          retention-days: 7
+          if-no-files-found: ignore
+
   sanitizers:
     name: Sanitizers (ubuntu-latest)
     runs-on: ubuntu-latest

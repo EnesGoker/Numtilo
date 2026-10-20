@@ -33,6 +33,7 @@ REQUIRED_FILES = frozenset({
     "cmake/StageSourcePackage.cmake.in", "cmake/MacOSXBundleInfo.plist.in",
     "cmake/CleanInstalledAssets.cmake.in", "cmake/FixupMacBundle.cmake.in",
     "cmake/SyncAssets.cmake", "cmake/VerifyHeadlessDependencies.cmake",
+    "cmake/RuntimeDependencies.cmake",
     "assets/fonts/Inter-Variable.ttf", "assets/fonts/LICENSE-Inter.txt",
     "assets/sounds/slide.wav", "assets/sounds/merge.wav",
     "assets/sounds/spawn.wav", "assets/sounds/game_over.wav",
