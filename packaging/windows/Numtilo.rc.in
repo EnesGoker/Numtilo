@@ -1,0 +1,4 @@
+// CMake places an unchanged Numtilo.ico beside the generated resource script.
+// The source-specific include directory also anchors resource-file lookup.
+// Source icon SHA256: @NUMTILO_WINDOWS_ICON_SHA256@
+1 ICON "Numtilo.ico"

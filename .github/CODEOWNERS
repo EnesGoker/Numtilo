@@ -1,0 +1,6 @@
+# Default ownership for the whole repository.
+* @EnesGoker
+
+# Critical automation and policy files.
+/.github/workflows/ @EnesGoker
+/scripts/apply_branch_protection.sh @EnesGoker

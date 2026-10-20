@@ -1,0 +1,285 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NUMTILO_BUILD_APP": "ON",
+        "BUILD_TESTING": "ON",
+        "NUMTILO_BUILD_UI_ACCEPTANCE": "OFF"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (system dependencies)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (system dependencies)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "vcpkg-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{VCPKG_ROOT}",
+        "rhs": ""
+      },
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "vcpkg-debug",
+      "displayName": "Debug (vcpkg manifest)",
+      "inherits": "vcpkg-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "vcpkg-release",
+      "displayName": "Release (vcpkg manifest)",
+      "inherits": "vcpkg-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "headless-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "NUMTILO_BUILD_APP": "OFF",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "headless-debug",
+      "displayName": "Headless Debug (system dependencies)",
+      "inherits": "headless-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "headless-release",
+      "displayName": "Headless Release (system dependencies)",
+      "inherits": "headless-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "vcpkg-headless-base",
+      "hidden": true,
+      "inherits": [
+        "headless-base",
+        "vcpkg-base"
+      ]
+    },
+    {
+      "name": "vcpkg-headless-debug",
+      "displayName": "Headless Debug (vcpkg manifest)",
+      "inherits": "vcpkg-headless-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "vcpkg-headless-release",
+      "displayName": "Headless Release (vcpkg manifest)",
+      "inherits": "vcpkg-headless-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ui-acceptance-release",
+      "displayName": "UI acceptance Release (system dependencies; display required)",
+      "inherits": "release",
+      "cacheVariables": {
+        "NUMTILO_BUILD_UI_ACCEPTANCE": "ON"
+      }
+    },
+    {
+      "name": "vcpkg-ui-acceptance-release",
+      "displayName": "UI acceptance Release (vcpkg; display required)",
+      "inherits": "vcpkg-release",
+      "cacheVariables": {
+        "NUMTILO_BUILD_UI_ACCEPTANCE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vcpkg-build-base",
+      "hidden": true,
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{VCPKG_ROOT}",
+        "rhs": ""
+      }
+    },
+    {
+      "name": "build-debug",
+      "configurePreset": "debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-release",
+      "configurePreset": "release",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-vcpkg-debug",
+      "inherits": "vcpkg-build-base",
+      "configurePreset": "vcpkg-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-vcpkg-release",
+      "inherits": "vcpkg-build-base",
+      "configurePreset": "vcpkg-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-headless-debug",
+      "configurePreset": "headless-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-headless-release",
+      "configurePreset": "headless-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-vcpkg-headless-debug",
+      "inherits": "vcpkg-build-base",
+      "configurePreset": "vcpkg-headless-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-vcpkg-headless-release",
+      "inherits": "vcpkg-build-base",
+      "configurePreset": "vcpkg-headless-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-ui-acceptance-release",
+      "configurePreset": "ui-acceptance-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "build-vcpkg-ui-acceptance-release",
+      "inherits": "vcpkg-build-base",
+      "configurePreset": "vcpkg-ui-acceptance-release",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "headless-unit-base",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "^unit$"
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "vcpkg-headless-unit-base",
+      "hidden": true,
+      "inherits": "headless-unit-base",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{VCPKG_ROOT}",
+        "rhs": ""
+      }
+    },
+    {
+      "name": "test-headless-debug",
+      "inherits": "headless-unit-base",
+      "configurePreset": "headless-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "test-headless-release",
+      "inherits": "headless-unit-base",
+      "configurePreset": "headless-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "test-vcpkg-headless-debug",
+      "inherits": "vcpkg-headless-unit-base",
+      "configurePreset": "vcpkg-headless-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "test-vcpkg-headless-release",
+      "inherits": "vcpkg-headless-unit-base",
+      "configurePreset": "vcpkg-headless-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "test-ui-acceptance-release",
+      "configurePreset": "ui-acceptance-release",
+      "configuration": "Release",
+      "filter": {
+        "include": {
+          "label": "^ui$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "test-vcpkg-ui-acceptance-release",
+      "configurePreset": "vcpkg-ui-acceptance-release",
+      "configuration": "Release",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{VCPKG_ROOT}",
+        "rhs": ""
+      },
+      "filter": {
+        "include": {
+          "label": "^ui$"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

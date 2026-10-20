@@ -1,0 +1,51 @@
+# Source-only post-build hook: failure must stop CPack before final publication.
+# CPack 4.0.2 may continue copying after a post-build FATAL_ERROR. Its final
+# destination is read after this hook. Keep that destination beneath this
+# regular script file (never a directory) until every verification has passed.
+# This blocks publication even when Python cannot run or verification aborts.
+set(_numtilo_verified_output_prefix "${CPACK_OUTPUT_FILE_PREFIX}")
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_CURRENT_LIST_FILE}")
+
+cmake_policy(PUSH)
+cmake_policy(VERSION 3.24)
+
+if(NOT "${CPACK_GENERATOR}" STREQUAL "ZIP")
+    message(FATAL_ERROR "Numtilo source packages support ZIP only; refused generator: ${CPACK_GENERATOR}")
+endif()
+if(NOT DEFINED CPACK_TEMPORARY_DIRECTORY OR
+   NOT IS_ABSOLUTE "${CPACK_TEMPORARY_DIRECTORY}" OR
+   NOT DEFINED CPACK_PACKAGE_FILES)
+    message(FATAL_ERROR "Safe source verification requires CPack staging and package paths")
+endif()
+string(REGEX REPLACE "/+$" "" _numtilo_verify_stage "${CPACK_TEMPORARY_DIRECTORY}")
+list(LENGTH CPACK_PACKAGE_FILES _numtilo_source_package_count)
+if(NOT _numtilo_source_package_count EQUAL 1)
+    message(FATAL_ERROR "Safe source verification requires exactly one source ZIP")
+endif()
+list(GET CPACK_PACKAGE_FILES 0 _numtilo_source_package)
+if(NOT IS_ABSOLUTE "${_numtilo_source_package}")
+    message(FATAL_ERROR "Safe source verification requires an absolute package path")
+endif()
+if(NOT "${_numtilo_source_package}" STREQUAL "${_numtilo_verify_stage}.zip")
+    message(FATAL_ERROR "Safe source verification refuses an unexpected package path")
+endif()
+find_program(_numtilo_verify_python NAMES python3 python REQUIRED NO_CACHE)
+execute_process(
+    COMMAND "${_numtilo_verify_python}" -B
+            [==[@CMAKE_CURRENT_SOURCE_DIR@/scripts/verify_source_package.py]==]
+            --manifest "${_numtilo_verify_stage}.numtilo-manifest.json"
+            --archive "${_numtilo_source_package}"
+    RESULT_VARIABLE _numtilo_verify_result
+    OUTPUT_VARIABLE _numtilo_verify_output
+    ERROR_VARIABLE _numtilo_verify_error
+)
+if(NOT "${_numtilo_verify_result}" STREQUAL "0")
+    message(FATAL_ERROR "Safe source verification failed (${_numtilo_verify_result}): ${_numtilo_verify_error}")
+endif()
+if(NOT "${_numtilo_verify_output}" STREQUAL "@PROJECT_VERSION@\n")
+    message(FATAL_ERROR "Safe source verification returned an unexpected version response")
+endif()
+message(STATUS "Verified Numtilo source ZIP: ${_numtilo_source_package}")
+set(CPACK_OUTPUT_FILE_PREFIX "${_numtilo_verified_output_prefix}")
+
+cmake_policy(POP)

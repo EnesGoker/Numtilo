@@ -1,0 +1,45 @@
+# Install-time only: CMAKE_INSTALL_PREFIX can be overridden by cmake --install or CPack.
+set(_numtilo_bundle "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/$<TARGET_BUNDLE_DIR_NAME:numtilo>")
+set(_numtilo_library_dirs "@NUMTILO_BUNDLE_LIBRARY_DIRS@")
+list(REMOVE_DUPLICATES _numtilo_library_dirs)
+
+# Copy frameworks completely and modify only this installed bundle's files.
+set(BU_COPY_FULL_FRAMEWORK_CONTENTS ON)
+set(BU_CHMOD_BUNDLE_ITEMS ON)
+include(BundleUtilities)
+fixup_bundle("${_numtilo_bundle}" "" "${_numtilo_library_dirs}")
+
+# install_name_tool invalidates copied signatures. Restore local executable validity
+# from the inside out; this is ad-hoc signing, not Developer ID signing/notarization.
+find_program(_numtilo_codesign codesign REQUIRED)
+function(numtilo_sign_local_code path)
+    execute_process(COMMAND "${_numtilo_codesign}" --force --sign - --timestamp=none "${path}"
+                    RESULT_VARIABLE _sign_result OUTPUT_VARIABLE _sign_output
+                    ERROR_VARIABLE _sign_error)
+    if (NOT _sign_result EQUAL 0)
+        message(FATAL_ERROR "Local ad-hoc signing failed for ${path}: ${_sign_output}${_sign_error}")
+    endif()
+endfunction()
+
+file(GLOB_RECURSE _numtilo_dylibs "${_numtilo_bundle}/Contents/Frameworks/*.dylib")
+foreach(_library IN LISTS _numtilo_dylibs)
+    if (NOT IS_SYMLINK "${_library}")
+        numtilo_sign_local_code("${_library}")
+    endif()
+endforeach()
+file(GLOB_RECURSE _numtilo_frameworks LIST_DIRECTORIES TRUE
+     "${_numtilo_bundle}/Contents/Frameworks/*.framework")
+# A nested framework's path sorts after its enclosing framework; sign nested first.
+list(SORT _numtilo_frameworks ORDER DESCENDING)
+foreach(_framework IN LISTS _numtilo_frameworks)
+    if (IS_DIRECTORY "${_framework}" AND NOT IS_SYMLINK "${_framework}")
+        numtilo_sign_local_code("${_framework}")
+    endif()
+endforeach()
+numtilo_sign_local_code("${_numtilo_bundle}")
+execute_process(COMMAND "${_numtilo_codesign}" --verify --deep --strict "${_numtilo_bundle}"
+                RESULT_VARIABLE _verify_result OUTPUT_VARIABLE _verify_output
+                ERROR_VARIABLE _verify_error)
+if (NOT _verify_result EQUAL 0)
+    message(FATAL_ERROR "Installed bundle signature verification failed: ${_verify_output}${_verify_error}")
+endif()

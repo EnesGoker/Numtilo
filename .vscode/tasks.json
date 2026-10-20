@@ -1,0 +1,30 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: Configure (vcpkg-debug)",
+            "type": "shell",
+            "command": "cmake --preset vcpkg-debug",
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake: Build (vcpkg-debug)",
+            "type": "shell",
+            "command": "cmake --build --preset build-vcpkg-debug",
+            "dependsOn": "CMake: Configure (vcpkg-debug)",
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "CMake: Test (vcpkg-debug)",
+            "type": "shell",
+            "command": "ctest --test-dir build/vcpkg-debug --output-on-failure",
+            "dependsOn": "CMake: Build (vcpkg-debug)",
+            "problemMatcher": ["$gcc"],
+            "group": "test"
+        }
+    ]
+}

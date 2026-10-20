@@ -1,0 +1,340 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  verify-version:
+    name: Verify Tag Version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Ensure tag matches VERSION file
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          FILE_VERSION="$(tr -d '\r\n' < VERSION)"
+
+          if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)."
+            exit 1
+          fi
+
+  package:
+    name: Build and Package (${{ matrix.os }})
+    needs: verify-version
+    # Keep check names stable while selecting the Visual Studio 2022 runner.
+    runs-on: ${{ matrix.runner || matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: windows-latest
+            runner: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.29.6
+
+      - name: CMake version
+        run: cmake --version
+
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            ccache \
+            libx11-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libudev-dev \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libflac-dev \
+            libvorbis-dev \
+            libopenal-dev \
+            libfreetype6-dev
+
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install ccache
+
+      - name: Restore ccache (Linux/macOS)
+        if: runner.os != 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-release-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**/*.cpp', 'src/**/*.hpp', 'src/**/*.mm', 'tests/**/*.cpp', 'tests/**/*.hpp') }}
+          restore-keys: |
+            ccache-release-${{ runner.os }}-
+
+      - name: Restore vcpkg archives (Linux/macOS)
+        if: runner.os != 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-release-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-release-archives-${{ runner.os }}-
+
+      - name: Initialize vcpkg archives (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { throw "LOCALAPPDATA is not set" }
+          $cachePath = Join-Path $env:LOCALAPPDATA "vcpkg/archives"
+          New-Item -ItemType Directory -Path $cachePath -Force -ErrorAction Stop | Out-Null
+          "VCPKG_DEFAULT_BINARY_CACHE=$cachePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append -ErrorAction Stop
+
+      - name: Restore vcpkg archives (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-release-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-release-archives-${{ runner.os }}-
+
+      - name: Read vcpkg baseline (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          BASELINE="$(sed -n 's/.*"builtin-baseline":[[:space:]]*"\([^"]*\)".*/\1/p' vcpkg.json)"
+          if [ -z "$BASELINE" ]; then
+            echo "Failed to read builtin-baseline from vcpkg.json"
+            exit 1
+          fi
+          echo "VCPKG_BASELINE=$BASELINE" >> "$GITHUB_ENV"
+
+      - name: Read vcpkg baseline (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $match = Select-String -Path "vcpkg.json" -Pattern '"builtin-baseline"\s*:\s*"([^"]+)"'
+          if (-not $match) { throw "Failed to read builtin-baseline from vcpkg.json" }
+          $baseline = $match.Matches[0].Groups[1].Value
+          "VCPKG_BASELINE=$baseline" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Setup vcpkg (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_BASELINE"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Setup vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP/vcpkg"
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg clone failed (exit code $LASTEXITCODE)" }
+          git -C "$env:RUNNER_TEMP/vcpkg" checkout "$env:VCPKG_BASELINE"
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg baseline checkout failed (exit code $LASTEXITCODE)" }
+          & "$env:RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed (exit code $LASTEXITCODE)" }
+          "VCPKG_ROOT=$env:RUNNER_TEMP/vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure (Release, Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cmake --preset vcpkg-release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Configure (Release, Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $toolchain = Join-Path $env:RUNNER_TEMP "vcpkg/scripts/buildsystems/vcpkg.cmake"
+          if (-not (Test-Path $toolchain)) { throw "vcpkg toolchain file not found: $toolchain" }
+          cmake `
+            -S . `
+            -B build/vcpkg-release `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain"
+
+      - name: Build (Release, Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cmake --build --preset build-vcpkg-release
+
+      - name: Build (Release, Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build/vcpkg-release --config Release
+
+      - name: Test (Release, Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ctest --test-dir build/vcpkg-release --output-on-failure
+
+      - name: Test (Release, Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ctest --test-dir build/vcpkg-release --output-on-failure -C Release
+
+      - name: Install and verify Runtime (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          stage="$PWD/build/vcpkg-release/package-root"
+          rm -rf "$stage"
+          cmake --install build/vcpkg-release --config Release --prefix "$stage" --component Runtime
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            executable="$stage/Numtilo.app/Contents/MacOS/Numtilo"
+          else
+            executable="$stage/numtilo"
+          fi
+          python3 scripts/verify_platform.py \
+            --executable "$executable" \
+            --worker "$PWD/build/vcpkg-release/platform_acceptance_worker" \
+            --output "$PWD/build/vcpkg-release/platform-acceptance-installed" \
+            --mode installed
+
+      - name: Package (CPack ZIP, Linux/macOS)
+        if: runner.os != 'Windows'
+        working-directory: build/vcpkg-release
+        run: cpack --config CPackConfig.cmake
+
+      - name: Package (CMake runtime install + ZIP, Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pkgRoot = Join-Path $PWD "build/vcpkg-release/package-root"
+          if (Test-Path $pkgRoot) { Remove-Item $pkgRoot -Recurse -Force }
+          cmake --install build/vcpkg-release --config Release --prefix "$pkgRoot" --component Runtime
+          if ($LASTEXITCODE -ne 0) { throw "CMake runtime install failed" }
+          python scripts/verify_platform.py `
+            --executable "$pkgRoot/Numtilo.exe" `
+            --worker "$PWD/build/vcpkg-release/Release/platform_acceptance_worker.exe" `
+            --output "$PWD/build/vcpkg-release/platform-acceptance-installed" `
+            --mode installed
+          if ($LASTEXITCODE -ne 0) { throw "Installed Runtime acceptance failed" }
+
+          $zipPath = ".\\build\\vcpkg-release\\Numtilo-${{ matrix.os }}.zip"
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+          Compress-Archive -Path "$pkgRoot\\*" -DestinationPath $zipPath -Force
+
+          $extracted = Join-Path $PWD "build/vcpkg-release/package-extracted"
+          if (Test-Path $extracted) { Remove-Item $extracted -Recurse -Force }
+          Expand-Archive -Path $zipPath -DestinationPath $extracted
+          python scripts/verify_platform.py `
+            --executable "$extracted/Numtilo.exe" `
+            --worker "$PWD/build/vcpkg-release/Release/platform_acceptance_worker.exe" `
+            --output "$PWD/build/vcpkg-release/platform-acceptance-package" `
+            --mode installed
+          if ($LASTEXITCODE -ne 0) { throw "Extracted ZIP acceptance failed" }
+
+      - name: Extract and verify ZIP (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          archives=(build/vcpkg-release/*.zip)
+          if [ "${#archives[@]}" -ne 1 ] || [ ! -f "${archives[0]}" ]; then
+            echo "Expected exactly one Release ZIP"
+            exit 1
+          fi
+          extracted="$PWD/build/vcpkg-release/package-extracted"
+          rm -rf "$extracted"
+          mkdir -p "$extracted"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # Preserve bundle symlinks and executable modes in the shipped ZIP.
+            ditto -x -k "${archives[0]}" "$extracted"
+            executable="$(find "$extracted" -type f -name Numtilo -print)"
+          else
+            unzip -q "${archives[0]}" -d "$extracted"
+            executable="$(find "$extracted" -type f -name numtilo -print)"
+          fi
+          if [ ! -f "$executable" ]; then
+            echo "Expected exactly one packaged executable"
+            exit 1
+          fi
+          python3 scripts/verify_platform.py \
+            --executable "$executable" \
+            --worker "$PWD/build/vcpkg-release/platform_acceptance_worker" \
+            --output "$PWD/build/vcpkg-release/platform-acceptance-package" \
+            --mode installed
+
+      - name: ccache statistics
+        if: runner.os != 'Windows'
+        run: ccache --show-stats
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: package-${{ matrix.os }}
+          path: build/vcpkg-release/*.zip
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          pattern: package-*
+          merge-multiple: true
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist
+          sha256sum *.zip > SHA256SUMS.txt
+
+      - name: Install syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Extract package contents for SBOM
+        run: |
+          mkdir -p dist/extracted dist/sbom
+          shopt -s nullglob
+          archives=(dist/*.zip)
+          if [ ${#archives[@]} -eq 0 ]; then
+            echo "No ZIP artifacts found in dist/"
+            exit 1
+          fi
+
+          for archive in "${archives[@]}"; do
+            package_name="$(basename "$archive" .zip)"
+            extract_dir="dist/extracted/${package_name}"
+            mkdir -p "$extract_dir"
+            unzip -q "$archive" -d "$extract_dir"
+          done
+
+      - name: Generate SBOM files (SPDX JSON)
+        run: |
+          shopt -s nullglob
+          extracted_dirs=(dist/extracted/*)
+          if [ ${#extracted_dirs[@]} -eq 0 ]; then
+            echo "No extracted package directories found in dist/extracted/"
+            exit 1
+          fi
+
+          for extract_dir in "${extracted_dirs[@]}"; do
+            package_name="$(basename "$extract_dir")"
+            syft "dir:${extract_dir}" -o "spdx-json=dist/sbom/${package_name}.spdx.json"
+          done
+
+      - name: Publish release with assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+            dist/sbom/*.spdx.json
+          generate_release_notes: true

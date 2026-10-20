@@ -1,0 +1,38 @@
+{
+  "name": "numtilo",
+  "version-string": "0.2.1",
+  "description": "2048 desktop game in C++ with SFML",
+  "builtin-baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1",
+  "dependencies": [
+    "nlohmann-json"
+  ],
+  "default-features": [
+    "desktop",
+    "tests"
+  ],
+  "features": {
+    "desktop": {
+      "description": "SFML desktop application, graphics and audio dependencies",
+      "dependencies": [
+        "sfml",
+        "fmt"
+      ]
+    },
+    "tests": {
+      "description": "Catch2 backend unit tests",
+      "dependencies": [
+        "catch2"
+      ]
+    }
+  },
+  "overrides": [
+    {
+      "name": "sfml",
+      "version": "2.6.2"
+    },
+    {
+      "name": "catch2",
+      "version": "3.7.1"
+    }
+  ]
+}

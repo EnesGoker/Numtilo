@@ -1,0 +1,37 @@
+# Build output
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+_CPack_Packages/
+.numtilo-source-*/
+
+# Compiled objects and binaries
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.dll
+*.dylib
+*.so
+numtilo
+sfml_2048
+2048
+Numtilo-*.zip
+sfml_2048-*.zip
+*-source.zip
+__MACOSX/
+
+# Tooling / IDE
+CMakeUserPresets.json
+__pycache__/
+.vscode/*.log
+
+# OS files
+.DS_Store
+
+# Local runtime data
+scores.json
+settings.json

@@ -1,0 +1,698 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Run format check
+        run: ./scripts/check_format.sh
+
+  static-analysis:
+    name: Static Analysis (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.29.6
+
+      - name: CMake version
+        run: cmake --version
+
+      - name: Install Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            ccache \
+            clang-tidy \
+            libx11-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libudev-dev \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libflac-dev \
+            libvorbis-dev \
+            libopenal-dev \
+            libfreetype6-dev
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-static-analysis-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'src/**/*.cpp', 'src/**/*.hpp', 'tests/**/*.cpp', 'tests/**/*.hpp') }}
+          restore-keys: |
+            ccache-static-analysis-
+
+      - name: Restore vcpkg archives
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-archives-static-analysis-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-archives-static-analysis-
+
+      - name: Read vcpkg baseline
+        run: |
+          BASELINE="$(sed -n 's/.*"builtin-baseline":[[:space:]]*"\([^"]*\)".*/\1/p' vcpkg.json)"
+          if [ -z "$BASELINE" ]; then
+            echo "Failed to read builtin-baseline from vcpkg.json"
+            exit 1
+          fi
+          echo "VCPKG_BASELINE=$BASELINE" >> "$GITHUB_ENV"
+
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_BASELINE"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake --preset vcpkg-debug -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build compile database
+        run: cmake --build --preset build-vcpkg-debug --target game_core core_unit_tests
+
+      - name: Run clang-tidy (bugprone/performance/portability)
+        run: |
+          # Analyze only this platform's translation units; other adapters may
+          # require headers/frameworks that do not exist on the current runner.
+          files="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path.cwd().resolve()
+          entries = json.loads(Path('build/vcpkg-debug/compile_commands.json').read_text())
+          sources = set()
+          for entry in entries:
+              source = Path(entry['file'])
+              if not source.is_absolute():
+                  source = Path(entry['directory']) / source
+              source = source.resolve()
+              if source.suffix in {'.cpp', '.mm'} and any(
+                  source.is_relative_to(root / folder) for folder in ('src', 'tests')
+              ):
+                  sources.add(str(source.relative_to(root)))
+          print('\n'.join(sorted(sources)))
+          PY
+          )"
+          if [ -z "$files" ]; then
+            echo "No source files for clang-tidy"
+            exit 0
+          fi
+
+          status=0
+          while IFS= read -r file; do
+            echo "clang-tidy: $file"
+            if ! clang-tidy "$file" \
+              -p build/vcpkg-debug \
+              -checks='-*,bugprone-*,performance-*,portability-*'; then
+              status=1
+            fi
+          done <<EOF
+          $files
+          EOF
+
+          exit "$status"
+
+      - name: ccache statistics
+        run: ccache --show-stats
+
+  headless:
+    name: Headless Build and Test (${{ matrix.os }}, ${{ matrix.config }})
+    # Keep check names stable while selecting the Visual Studio 2022 runner.
+    runs-on: ${{ matrix.runner || matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        config: [Debug, Release]
+        include:
+          - config: Debug
+            preset: debug
+          - config: Release
+            preset: release
+          - os: windows-latest
+            runner: windows-2022
+    env:
+      PRESET: vcpkg-headless-${{ matrix.preset }}
+      BUILD_DIR: build/vcpkg-headless-${{ matrix.preset }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.29.6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Linux headless build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Install macOS headless build tools
+        if: runner.os == 'macOS'
+        run: brew install ccache
+
+      - name: Initialize headless caches
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as environment:
+              for name, directory in [('VCPKG_DEFAULT_BINARY_CACHE', 'vcpkg-headless-archives'),
+                                      ('CCACHE_DIR', 'ccache-headless')]:
+                  path = Path(os.environ['RUNNER_TEMP']) / directory
+                  path.mkdir(parents=True, exist_ok=True)
+                  environment.write(f'{name}={path}\n')
+
+      - name: Restore headless compiler cache
+        if: runner.os != 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-headless-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**/*.cpp', 'src/**/*.hpp', 'src/**/*.mm', 'tests/**/*.cpp', 'tests/**/*.hpp') }}
+          restore-keys: |
+            ccache-headless-${{ runner.os }}-${{ matrix.config }}-
+
+      - name: Restore headless vcpkg archives
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-headless-archives-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-headless-archives-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Setup pinned vcpkg
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          baseline = json.loads(Path('vcpkg.json').read_text(encoding='utf-8'))['builtin-baseline']
+          root = Path(os.environ['RUNNER_TEMP']) / 'vcpkg'
+          subprocess.run(['git', 'clone', 'https://github.com/microsoft/vcpkg.git', str(root)], check=True)
+          subprocess.run(['git', '-C', str(root), 'checkout', baseline], check=True)
+          bootstrap = root / ('bootstrap-vcpkg.bat' if os.name == 'nt' else 'bootstrap-vcpkg.sh')
+          subprocess.run([str(bootstrap), '-disableMetrics'], check=True)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as environment:
+              environment.write(f'VCPKG_ROOT={root}\n')
+
+      - name: Configure headless preset with dependency guard
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+
+          source = Path.cwd()
+          arguments = ['cmake', '--preset', os.environ['PRESET'],
+                       '-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=' + str(source / 'cmake/VerifyHeadlessDependencies.cmake'),
+                       '-DHEADLESS_AUDIT_DIR=' + str(source / os.environ['BUILD_DIR'] / 'headless-evidence')]
+          if os.name == 'nt':
+              arguments += ['-G', 'Visual Studio 17 2022', '-A', 'x64']
+          else:
+              arguments += ['-DCMAKE_CXX_COMPILER_LAUNCHER=ccache']
+          subprocess.run(arguments, check=True)
+
+      - name: Check headless configuration and installed ports
+        run: >-
+          python scripts/check_headless_configuration.py
+          --build "${{ env.BUILD_DIR }}"
+          --evidence "${{ env.BUILD_DIR }}/headless-evidence"
+          --output "${{ env.BUILD_DIR }}/headless-evidence/configuration-report.json"
+
+      - name: Build headless preset
+        run: cmake --build --preset build-${{ env.PRESET }} --parallel 4
+
+      - name: Test headless preset
+        run: ctest --preset test-${{ env.PRESET }} --output-junit "${{ env.BUILD_DIR }}/unit-tests.xml"
+
+      - name: Test portable headless checker
+        if: matrix.config == 'Release'
+        run: python -m unittest discover -s scripts/tests -p test_check_headless_configuration.py -v
+
+      - name: Test full dependency verifier (Linux/macOS)
+        if: runner.os != 'Windows' && matrix.config == 'Release'
+        run: python -m unittest discover -s scripts/tests -p test_verify_headless.py -v
+
+      - name: Audit fresh headless builds (Linux/macOS)
+        if: runner.os != 'Windows' && matrix.config == 'Release'
+        run: |
+          python scripts/verify_headless.py --source . --output build/headless-acceptance \
+            --config Release --generator "Unix Makefiles" \
+            --toolchain "$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          python scripts/verify_headless.py --source . --output build/headless-acceptance \
+            --config Release --no-tests --generator "Unix Makefiles" \
+            --toolchain "$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Upload headless evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: headless-evidence-${{ matrix.os }}-${{ matrix.config }}
+          path: |
+            ${{ env.BUILD_DIR }}/headless-evidence/
+            ${{ env.BUILD_DIR }}/CMakeCache.txt
+            ${{ env.BUILD_DIR }}/compile_commands.json
+            ${{ env.BUILD_DIR }}/Testing/Temporary/
+            ${{ env.BUILD_DIR }}/unit-tests.xml
+            ${{ env.BUILD_DIR }}/vcpkg_installed/vcpkg/status
+            build/headless-acceptance/**/report.json
+            build/headless-acceptance/**/evidence/**
+            build/headless-acceptance/**/build/CMakeCache.txt
+            build/headless-acceptance/**/build/compile_commands.json
+            build/headless-acceptance/**/build/Testing/Temporary/**
+            build/headless-acceptance/**/build/.cmake/api/v1/reply/**
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: warn
+
+  # Preserve the existing required check names for full desktop verification.
+  build-and-test:
+    name: Build and Test (${{ matrix.os }})
+    # Keep check names stable while selecting the Visual Studio 2022 runner.
+    runs-on: ${{ matrix.runner || matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: windows-latest
+            runner: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.29.6
+
+      - name: CMake version
+        run: cmake --version
+
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            ccache \
+            libx11-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libudev-dev \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libflac-dev \
+            libvorbis-dev \
+            libopenal-dev \
+            libfreetype6-dev
+
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install ccache
+
+      - name: Restore ccache (Linux/macOS)
+        if: runner.os != 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'src/**/*.cpp', 'src/**/*.hpp', 'tests/**/*.cpp', 'tests/**/*.hpp') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Restore vcpkg archives (Linux/macOS)
+        if: runner.os != 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-archives-${{ runner.os }}-
+
+      - name: Initialize vcpkg archives (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { throw "LOCALAPPDATA is not set" }
+          $cachePath = Join-Path $env:LOCALAPPDATA "vcpkg/archives"
+          New-Item -ItemType Directory -Path $cachePath -Force -ErrorAction Stop | Out-Null
+          "VCPKG_DEFAULT_BINARY_CACHE=$cachePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append -ErrorAction Stop
+
+      - name: Restore vcpkg archives (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-archives-${{ runner.os }}-
+
+      - name: Read vcpkg baseline (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          BASELINE="$(sed -n 's/.*"builtin-baseline":[[:space:]]*"\([^"]*\)".*/\1/p' vcpkg.json)"
+          if [ -z "$BASELINE" ]; then
+            echo "Failed to read builtin-baseline from vcpkg.json"
+            exit 1
+          fi
+          echo "VCPKG_BASELINE=$BASELINE" >> "$GITHUB_ENV"
+
+      - name: Read vcpkg baseline (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $match = Select-String -Path "vcpkg.json" -Pattern '"builtin-baseline"\s*:\s*"([^"]+)"'
+          if (-not $match) { throw "Failed to read builtin-baseline from vcpkg.json" }
+          $baseline = $match.Matches[0].Groups[1].Value
+          "VCPKG_BASELINE=$baseline" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Setup vcpkg (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_BASELINE"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Setup vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP/vcpkg"
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg clone failed (exit code $LASTEXITCODE)" }
+          git -C "$env:RUNNER_TEMP/vcpkg" checkout "$env:VCPKG_BASELINE"
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg baseline checkout failed (exit code $LASTEXITCODE)" }
+          & "$env:RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed (exit code $LASTEXITCODE)" }
+          "VCPKG_ROOT=$env:RUNNER_TEMP/vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cmake --preset vcpkg-debug -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $toolchain = Join-Path $env:RUNNER_TEMP "vcpkg/scripts/buildsystems/vcpkg.cmake"
+          if (-not (Test-Path $toolchain)) { throw "vcpkg toolchain file not found: $toolchain" }
+          cmake `
+            -S . `
+            -B build/vcpkg-debug `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain"
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cmake --build --preset build-vcpkg-debug
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build/vcpkg-debug --config Debug
+
+      - name: Test (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ctest --test-dir build/vcpkg-debug --output-on-failure
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ctest --test-dir build/vcpkg-debug --output-on-failure -C Debug
+
+      - name: Install and verify Runtime (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          stage="$PWD/build/vcpkg-debug/runtime-stage"
+          rm -rf "$stage"
+          cmake --install build/vcpkg-debug --config Debug --prefix "$stage" --component Runtime
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            executable="$stage/Numtilo.app/Contents/MacOS/Numtilo"
+          else
+            executable="$stage/numtilo"
+          fi
+          python3 scripts/verify_platform.py \
+            --executable "$executable" \
+            --worker "$PWD/build/vcpkg-debug/platform_acceptance_worker" \
+            --output "$PWD/build/vcpkg-debug/platform-acceptance-installed" \
+            --mode installed
+
+      - name: Install and verify Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stage = Join-Path $PWD "build/vcpkg-debug/runtime-stage"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          cmake --install build/vcpkg-debug --config Debug --prefix "$stage" --component Runtime
+          if ($LASTEXITCODE -ne 0) { throw "CMake Runtime install failed" }
+          python scripts/verify_platform.py `
+            --executable "$stage/Numtilo.exe" `
+            --worker "$PWD/build/vcpkg-debug/Debug/platform_acceptance_worker.exe" `
+            --output "$PWD/build/vcpkg-debug/platform-acceptance-installed" `
+            --mode installed
+          if ($LASTEXITCODE -ne 0) { throw "Installed Runtime acceptance failed" }
+
+      - name: ccache statistics
+        if: runner.os != 'Windows'
+        run: ccache --show-stats
+
+  sanitizers:
+    name: Sanitizers (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.29.6
+
+      - name: CMake version
+        run: cmake --version
+
+      - name: Install Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-sanitizers-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**/*.mm', 'src/**/*.cpp', 'src/**/*.hpp', 'tests/**/*.cpp', 'tests/**/*.hpp') }}
+          restore-keys: |
+            ccache-sanitizers-
+
+      - name: Restore vcpkg archives
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-headless-archives-sanitizers-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-headless-archives-sanitizers-
+
+      - name: Read vcpkg baseline
+        run: |
+          BASELINE="$(sed -n 's/.*"builtin-baseline":[[:space:]]*"\([^"]*\)".*/\1/p' vcpkg.json)"
+          if [ -z "$BASELINE" ]; then
+            echo "Failed to read builtin-baseline from vcpkg.json"
+            exit 1
+          fi
+          echo "VCPKG_BASELINE=$BASELINE" >> "$GITHUB_ENV"
+
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_BASELINE"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Configure (sanitizers)
+        run: |
+          cmake --preset vcpkg-headless-debug \
+            -B build/sanitizers \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="$PWD/cmake/VerifyHeadlessDependencies.cmake" \
+            -DHEADLESS_AUDIT_DIR="$PWD/build/sanitizers/headless-evidence" \
+            -DNUMTILO_ENABLE_SANITIZERS=ON
+
+      - name: Check headless configuration
+        run: >-
+          python3 scripts/check_headless_configuration.py --build build/sanitizers
+          --evidence build/sanitizers/headless-evidence
+          --output build/sanitizers/headless-evidence/configuration-report.json
+
+      - name: Build (sanitizers)
+        run: cmake --build build/sanitizers --target core_unit_tests
+
+      - name: Test (sanitizers)
+        run: ctest --test-dir build/sanitizers -C Debug --output-on-failure -L "^unit$" --no-tests=error --output-junit build/sanitizers/unit-tests.xml
+
+      - name: Upload sanitizers headless evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sanitizers-headless-evidence
+          path: |
+            build/sanitizers/headless-evidence/
+            build/sanitizers/CMakeCache.txt
+            build/sanitizers/Testing/Temporary/
+            build/sanitizers/unit-tests.xml
+            build/sanitizers/vcpkg_installed/vcpkg/status
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: ccache statistics
+        run: ccache --show-stats
+
+  coverage:
+    name: Coverage (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.29.6
+
+      - name: CMake version
+        run: cmake --version
+
+      - name: Install Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache gcovr
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ccache-coverage-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**/*.mm', 'src/**/*.cpp', 'src/**/*.hpp', 'tests/**/*.cpp', 'tests/**/*.hpp') }}
+          restore-keys: |
+            ccache-coverage-
+
+      - name: Restore vcpkg archives
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-headless-archives-coverage-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-headless-archives-coverage-
+
+      - name: Read vcpkg baseline
+        run: |
+          BASELINE="$(sed -n 's/.*"builtin-baseline":[[:space:]]*"\([^"]*\)".*/\1/p' vcpkg.json)"
+          if [ -z "$BASELINE" ]; then
+            echo "Failed to read builtin-baseline from vcpkg.json"
+            exit 1
+          fi
+          echo "VCPKG_BASELINE=$BASELINE" >> "$GITHUB_ENV"
+
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_BASELINE"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Configure (coverage)
+        run: |
+          cmake --preset vcpkg-headless-debug \
+            -B build/coverage \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="$PWD/cmake/VerifyHeadlessDependencies.cmake" \
+            -DHEADLESS_AUDIT_DIR="$PWD/build/coverage/headless-evidence" \
+            -DNUMTILO_ENABLE_COVERAGE=ON
+
+      - name: Check headless configuration
+        run: >-
+          python3 scripts/check_headless_configuration.py --build build/coverage
+          --evidence build/coverage/headless-evidence
+          --output build/coverage/headless-evidence/configuration-report.json
+
+      - name: Build (coverage)
+        run: cmake --build build/coverage --target core_unit_tests
+
+      - name: Test (coverage)
+        run: ctest --test-dir build/coverage -C Debug --output-on-failure -L "^unit$" --no-tests=error --output-junit build/coverage/unit-tests.xml
+
+      - name: Generate coverage report (>=80% line)
+        run: |
+          gcovr \
+            --root . \
+            --filter 'src/core' \
+            --print-summary \
+            --xml-pretty --xml build/coverage/coverage.xml \
+            --html-details build/coverage/coverage.html \
+            --fail-under-line 80
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report
+          path: |
+            build/coverage/coverage.xml
+            build/coverage/*.html
+          if-no-files-found: error
+
+      - name: Upload coverage headless evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-headless-evidence
+          path: |
+            build/coverage/headless-evidence/
+            build/coverage/CMakeCache.txt
+            build/coverage/Testing/Temporary/
+            build/coverage/unit-tests.xml
+            build/coverage/vcpkg_installed/vcpkg/status
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: ccache statistics
+        run: ccache --show-stats

@@ -1,0 +1,44 @@
+# Source-only CPack staging hook; normal builds and binary packages do not run it.
+cmake_policy(PUSH)
+cmake_policy(VERSION 3.24)
+
+set(_numtilo_source_root [==[@CMAKE_CURRENT_SOURCE_DIR@]==])
+set(_numtilo_source_helper [==[@CMAKE_CURRENT_SOURCE_DIR@/scripts/stage_source.py]==])
+set(_numtilo_source_version "@PROJECT_VERSION@")
+
+if(NOT "${CPACK_GENERATOR}" STREQUAL "ZIP")
+    message(FATAL_ERROR "Numtilo source packages support ZIP only; refused generator: ${CPACK_GENERATOR}")
+endif()
+
+if(NOT DEFINED CMAKE_INSTALL_PREFIX OR CMAKE_INSTALL_PREFIX STREQUAL "" OR
+   NOT IS_ABSOLUTE "${CMAKE_INSTALL_PREFIX}")
+    message(FATAL_ERROR "Source packaging requires an absolute CPack staging directory")
+endif()
+string(REGEX REPLACE "/+$" "" _numtilo_source_stage "${CMAKE_INSTALL_PREFIX}")
+# With DESTDIR enabled CPack supplies the project install prefix, not its stage.
+if(NOT "$ENV{DESTDIR}" STREQUAL "")
+    message(FATAL_ERROR "Safe source packaging requires CPACK_SET_DESTDIR=OFF")
+endif()
+
+# Discover source-packaging tools here, never during the game's configure phase.
+find_program(_numtilo_source_python NAMES python3 python REQUIRED NO_CACHE)
+find_program(_numtilo_source_git NAMES git REQUIRED NO_CACHE)
+execute_process(
+    COMMAND "${_numtilo_source_python}" "${_numtilo_source_helper}"
+            --source-root "${_numtilo_source_root}"
+            --destination "${_numtilo_source_stage}"
+            --expected-version "${_numtilo_source_version}"
+            --manifest "${_numtilo_source_stage}.numtilo-manifest.json"
+    RESULT_VARIABLE _numtilo_source_result
+    OUTPUT_VARIABLE _numtilo_source_output
+    ERROR_VARIABLE _numtilo_source_error
+)
+if(NOT "${_numtilo_source_result}" STREQUAL "0")
+    message(FATAL_ERROR
+        "Safe source staging failed (${_numtilo_source_result}): ${_numtilo_source_error}")
+endif()
+if(NOT "${_numtilo_source_output}" STREQUAL "${_numtilo_source_version}\n")
+    message(FATAL_ERROR "Safe source staging returned an unexpected version response")
+endif()
+
+cmake_policy(POP)
