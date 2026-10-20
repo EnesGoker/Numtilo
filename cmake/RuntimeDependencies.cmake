@@ -87,29 +87,53 @@ function(numtilo_verify_runtime_dependencies executable)
         message(FATAL_ERROR "Unresolved Runtime dependencies: ${_numtilo_unresolved}")
     endif()
     if (_numtilo_conflicts_FILENAMES)
+        foreach(_numtilo_name IN LISTS _numtilo_conflicts_FILENAMES)
+            message(STATUS "Conflicting Runtime library ${_numtilo_name}: ${_numtilo_conflicts_${_numtilo_name}}")
+        endforeach()
         message(FATAL_ERROR "Conflicting Runtime dependencies: ${_numtilo_conflicts_FILENAMES}")
     endif()
 
     # Linux RUNPATH is not inherited by transitive dependencies, so the scanner
     # can report an OS search path even when the same library is packaged. Check
     # every resolved non-OS library's companion in this flat Runtime package.
+    set(_numtilo_companions "")
     foreach(_numtilo_dependency IN LISTS _numtilo_resolved)
         get_filename_component(_numtilo_name "${_numtilo_dependency}" NAME)
         set(_numtilo_companion "${_numtilo_root}/${_numtilo_name}")
         if (NOT EXISTS "${_numtilo_companion}" OR IS_DIRECTORY "${_numtilo_companion}")
             message(FATAL_ERROR "Required Runtime library is missing from the package: ${_numtilo_name}")
         endif()
-        file(REAL_PATH "${_numtilo_companion}" _numtilo_actual)
-        set(_numtilo_comparison_root "${_numtilo_root}")
-        if (NUMTILO_RUNTIME_SYSTEM_NAME STREQUAL "Windows")
-            string(TOLOWER "${_numtilo_comparison_root}" _numtilo_comparison_root)
-            string(TOLOWER "${_numtilo_actual}" _numtilo_actual)
-        endif()
-        cmake_path(IS_PREFIX _numtilo_comparison_root "${_numtilo_actual}" NORMALIZE _numtilo_inside)
-        if (NOT _numtilo_inside)
-            message(FATAL_ERROR "Runtime library points outside the package: ${_numtilo_companion}")
-        endif()
+        list(APPEND _numtilo_companions "${_numtilo_companion}")
     endforeach()
+    # CMake 3.29's Windows REAL_PATH only expands the absolute lexical path.
+    # Python resolves native file links and parent junctions on every host,
+    # including when a portable fixture selects a different target platform.
+    if (NOT Python3_EXECUTABLE)
+        find_package(Python3 3.8 COMPONENTS Interpreter REQUIRED)
+    endif()
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" -B -c [=[
+from pathlib import Path
+import sys
+
+try:
+    root = Path(sys.argv[1]).resolve(strict=True)
+    for name in sys.argv[2:]:
+        actual = Path(name).resolve(strict=True)
+        if not actual.is_file():
+            raise ValueError("Required runtime library is not a regular file: " + name)
+        actual.relative_to(root)
+except (OSError, RuntimeError, ValueError) as error:
+    print(str(error), file=sys.stderr)
+    sys.exit(1)
+]=] "${_numtilo_root}" ${_numtilo_companions}
+        RESULT_VARIABLE _numtilo_containment_result
+        ERROR_VARIABLE _numtilo_containment_error
+        TIMEOUT 15
+    )
+    if (NOT _numtilo_containment_result STREQUAL "0")
+        message(FATAL_ERROR "Runtime library points outside the package or cannot be resolved safely: ${_numtilo_containment_error}")
+    endif()
     list(LENGTH _numtilo_resolved _numtilo_count)
     message(STATUS "Verified ${_numtilo_count} packaged Runtime dependencies (${NUMTILO_RUNTIME_SYSTEM_NAME})")
 endfunction()

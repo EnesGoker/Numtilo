@@ -6,11 +6,16 @@ inside these fixtures; these tests do not claim native PE/ELF scanning or game
 execution on Windows/Linux. Native installed-package checks remain CI's job.
 """
 
+from contextlib import redirect_stderr
+import importlib.util
+import io
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -96,6 +101,7 @@ class RuntimeDependencyTests(unittest.TestCase):
         marker = self.directory / "scanner-called"
         lines = [
             "set(CMAKE_SYSTEM_NAME " + system + ")",
+            "set(Python3_EXECUTABLE " + bracket(Path(sys.executable).as_posix()) + ")",
             "set(fixture_resolved " + bracket(";".join(paths)) + ")",
             "set(fixture_unresolved " + bracket(";".join(unresolved)) + ")",
             "set(fixture_conflicts " + bracket(";".join(conflicts)) + ")",
@@ -252,6 +258,44 @@ class RuntimeDependencyTests(unittest.TestCase):
             self.skipTest("Creating symlinks is unavailable: " + str(error))
         result, _ = self.verifier(resolved=["libopenal.so.1"])
         self.assert_failure(result, "Runtime library points outside the package")
+
+    def test_required_library_link_through_external_directory_fails(self):
+        external = self.directory / "host-libraries"
+        external.mkdir()
+        (external / "target.so.1").write_bytes(b"synthetic external library\n")
+        (self.package / "links").symlink_to(external, target_is_directory=True)
+        (self.package / "libopenal.so.1").symlink_to("links/target.so.1")
+        result, _ = self.verifier(resolved=["libopenal.so.1"])
+        self.assert_failure(result, "Runtime library points outside the package")
+
+    def test_required_library_symlink_loop_fails(self):
+        (self.package / "libopenal.so.1").symlink_to("loop.so.1")
+        (self.package / "loop.so.1").symlink_to("libopenal.so.1")
+        result, _ = self.verifier(resolved=["libopenal.so.1"])
+        self.assert_failure(result, "Runtime library")
+
+    def test_dependency_failure_prints_cmake_diagnostic(self):
+        spec = importlib.util.spec_from_file_location(
+            "runtime_platform_verification", ROOT / "scripts/verify_platform.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        verification = module.Verification.__new__(module.Verification)
+        verification.executable = self.package / "numtilo"
+        verification.case = lambda name, action: action(self.directory)
+
+        def failed_command(*args):
+            (self.directory / "runtime-dependencies.stderr").write_text(
+                "synthetic CMake failure detail\n", encoding="utf-8")
+            raise AssertionError("synthetic command failed")
+
+        output = io.StringIO()
+        with patch.object(module.shutil, "which", return_value="cmake"), \
+                patch.object(verification, "command", side_effect=failed_command) as command, \
+                redirect_stderr(output):
+            with self.assertRaisesRegex(AssertionError, "synthetic command failed"):
+                verification.runtime_dependencies()
+        self.assertIn("synthetic CMake failure detail", output.getvalue())
+        self.assertIn("-DPython3_EXECUTABLE=" + sys.executable, command.call_args.args[0])
 
 
 if __name__ == "__main__":

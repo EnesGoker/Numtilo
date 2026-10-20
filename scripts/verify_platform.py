@@ -449,8 +449,19 @@ class Verification:
             cmake = shutil.which("cmake")
             require(cmake is not None, "CMake is required to audit installed runtime dependencies")
             script = Path(__file__).resolve().parents[1] / "cmake/RuntimeDependencies.cmake"
-            self.command([cmake, "-DNUMTILO_RUNTIME_EXECUTABLE=" + str(self.executable),
-                          "-P", script], directory, directory, "runtime-dependencies")
+            try:
+                self.command([cmake, "-DNUMTILO_RUNTIME_EXECUTABLE=" + str(self.executable),
+                              "-DPython3_EXECUTABLE=" + sys.executable,
+                              "-P", script], directory, directory, "runtime-dependencies")
+            except Exception:
+                for stream in ("stdout", "stderr"):
+                    evidence = directory / ("runtime-dependencies." + stream)
+                    if evidence.is_file():
+                        output = evidence.read_text(encoding="utf-8", errors="replace")
+                        if output:
+                            print("Runtime dependency " + stream + ":\n" + output,
+                                  file=sys.stderr, flush=True)
+                raise
             return {"scanner": "CMake GET_RUNTIME_DEPENDENCIES",
                     "scope": "installed Windows/Linux runtime and transitive shared libraries"}
         self.case("installed-runtime-dependencies", check)
