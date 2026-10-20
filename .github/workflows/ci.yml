@@ -502,8 +502,10 @@ jobs:
         with:
           name: platform-acceptance-${{ matrix.os }}
           path: |
-            build/vcpkg-debug/platform-acceptance-ci/**
-            build/vcpkg-debug/platform-acceptance-installed/**
+            build/vcpkg-debug/platform-acceptance-*/**/report.json
+            build/vcpkg-debug/platform-acceptance-*/**/*.stdout
+            build/vcpkg-debug/platform-acceptance-*/**/*.stderr
+            build/vcpkg-debug/platform-acceptance-*/**/*.command.json
           retention-days: 7
           if-no-files-found: ignore
 

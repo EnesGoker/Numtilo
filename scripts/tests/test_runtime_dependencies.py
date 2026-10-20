@@ -92,7 +92,8 @@ class RuntimeDependencyTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"synthetic fixture; not an executable or shared library\n")
 
-    def verifier(self, system="Linux", files=(), resolved=(), unresolved=(), conflicts=()):
+    def verifier(self, system="Linux", files=(), resolved=(), unresolved=(), conflicts=(),
+                 conflict_paths=None):
         executable = self.package / ("Numtilo.exe" if system == "Windows" else "numtilo")
         executable.write_bytes(b"synthetic fixture executable; never launched\n")
         self.write_files(files)
@@ -106,6 +107,13 @@ class RuntimeDependencyTests(unittest.TestCase):
             "set(fixture_unresolved " + bracket(";".join(unresolved)) + ")",
             "set(fixture_conflicts " + bracket(";".join(conflicts)) + ")",
             "set(fixture_package " + bracket(self.package.as_posix()) + ")",
+        ]
+        for name, candidates in (conflict_paths or {}).items():
+            candidate_paths = [str(value) if Path(value).is_absolute()
+                               else str(self.package / value) for value in candidates]
+            lines.append("set(fixture_conflict_" + name + " "
+                         + bracket(";".join(candidate_paths)) + ")")
+        lines += [
             # CMake preserves its built-in command as _file when overridden.
             # A macro preserves built-in file() output variables in the caller.
             "macro(file operation)",
@@ -116,6 +124,10 @@ class RuntimeDependencyTests(unittest.TestCase):
             "    set(${scan_RESOLVED_DEPENDENCIES_VAR} \"${fixture_resolved}\")",
             "    set(${scan_UNRESOLVED_DEPENDENCIES_VAR} \"${fixture_unresolved}\")",
             "    set(${scan_CONFLICTING_DEPENDENCIES_PREFIX}_FILENAMES \"${fixture_conflicts}\")",
+            "    foreach(conflict_name IN LISTS fixture_conflicts)",
+            "      set(${scan_CONFLICTING_DEPENDENCIES_PREFIX}_${conflict_name}",
+            "          \"${fixture_conflict_${conflict_name}}\")",
+            "    endforeach()",
             "    _file(WRITE " + bracket(marker.as_posix()) + " \"called\")",
             "  else()",
             "    if(\"${operation}\" STREQUAL \"GLOB_RECURSE\")",
@@ -223,7 +235,7 @@ class RuntimeDependencyTests(unittest.TestCase):
         result, scanned = self.verifier(unresolved=["libopenal.so.1"])
         self.assert_failure(result, "Unresolved Runtime dependencies")
         self.assertTrue(scanned)
-        result, scanned = self.verifier(conflicts=["libsfml-audio.so.2.6"])
+        result, scanned = self.verifier("Windows", conflicts=["OpenAL32.dll"])
         self.assert_failure(result, "Conflicting Runtime dependencies")
         self.assertTrue(scanned)
 
@@ -264,7 +276,10 @@ class RuntimeDependencyTests(unittest.TestCase):
         external.mkdir()
         (external / "target.so.1").write_bytes(b"synthetic external library\n")
         (self.package / "links").symlink_to(external, target_is_directory=True)
-        (self.package / "libopenal.so.1").symlink_to("links/target.so.1")
+        link = self.package / "libopenal.so.1"
+        link.symlink_to(Path("links") / "target.so.1")
+        self.assertTrue(link.is_file(), "The fixture must create a usable file symlink")
+        self.assertEqual(link.resolve(strict=True), (external / "target.so.1").resolve(strict=True))
         result, _ = self.verifier(resolved=["libopenal.so.1"])
         self.assert_failure(result, "Runtime library points outside the package")
 
@@ -273,6 +288,45 @@ class RuntimeDependencyTests(unittest.TestCase):
         (self.package / "loop.so.1").symlink_to("libopenal.so.1")
         result, _ = self.verifier(resolved=["libopenal.so.1"])
         self.assert_failure(result, "Runtime library")
+
+    def test_linux_identical_conflict_copies_are_accepted(self):
+        name = "libX11.so.6"
+        self.write_files([name])
+        host = self.directory / name
+        host.write_bytes((self.package / name).read_bytes())
+        result, scanned = self.verifier(
+            conflicts=[name], conflict_paths={name: [name, host]})
+        self.assert_success(result)
+        self.assertTrue(scanned)
+
+    def test_linux_different_conflict_copies_fail(self):
+        name = "libX11.so.6"
+        self.write_files([name])
+        host = self.directory / name
+        host.write_bytes(b"different synthetic library content\n")
+        result, _ = self.verifier(conflicts=[name], conflict_paths={name: [name, host]})
+        self.assert_failure(result, "Conflicting Runtime dependencies")
+
+    def test_linux_missing_conflict_companion_fails(self):
+        name = "libX11.so.6"
+        host = self.directory / name
+        host.write_bytes(b"synthetic host library\n")
+        result, _ = self.verifier(conflicts=[name], conflict_paths={name: [host]})
+        self.assert_failure(result, "Required Runtime library is missing")
+
+    def test_linux_conflict_companion_external_symlink_fails(self):
+        name = "libX11.so.6"
+        host = self.directory / name
+        host.write_bytes(b"synthetic host library\n")
+        (self.package / name).symlink_to(host)
+        result, _ = self.verifier(conflicts=[name], conflict_paths={name: [name, host]})
+        self.assert_failure(result, "Runtime library points outside the package")
+
+    def test_linux_empty_conflict_candidates_fail(self):
+        name = "libX11.so.6"
+        self.write_files([name])
+        result, _ = self.verifier(conflicts=[name])
+        self.assert_failure(result, "Conflicting Runtime dependencies")
 
     def test_dependency_failure_prints_cmake_diagnostic(self):
         spec = importlib.util.spec_from_file_location(
