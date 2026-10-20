@@ -77,7 +77,7 @@ jobs:
 
       - name: Restore ccache (Linux/macOS)
         if: runner.os != 'Windows'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.ccache
           key: ccache-release-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**/*.cpp', 'src/**/*.hpp', 'src/**/*.mm', 'tests/**/*.cpp', 'tests/**/*.hpp') }}
@@ -86,7 +86,7 @@ jobs:
 
       - name: Restore vcpkg archives (Linux/macOS)
         if: runner.os != 'Windows'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/vcpkg/archives
           key: vcpkg-release-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
@@ -104,7 +104,7 @@ jobs:
 
       - name: Restore vcpkg archives (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: vcpkg-release-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
