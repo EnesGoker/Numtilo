@@ -282,7 +282,7 @@ jobs:
 
       - name: Upload headless evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: headless-evidence-${{ matrix.os }}-${{ matrix.config }}
           path: |
@@ -498,7 +498,7 @@ jobs:
 
       - name: Upload platform acceptance evidence on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: platform-acceptance-${{ matrix.os }}
           path: |
@@ -585,7 +585,7 @@ jobs:
 
       - name: Upload sanitizers headless evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sanitizers-headless-evidence
           path: |
@@ -685,7 +685,7 @@ jobs:
             --fail-under-line 80
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: |
@@ -695,7 +695,7 @@ jobs:
 
       - name: Upload coverage headless evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-headless-evidence
           path: |
