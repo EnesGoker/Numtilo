@@ -13,7 +13,24 @@ and SFML. Slide matching tiles together, build your score and reach 2048.
   <img src="docs/images/numtilo-game.png" alt="Real Numtilo gameplay showing a 4×4 board, player Demo and score 140" width="720" />
 </p>
 
-Source version: **0.2.1**. No Numtilo GitHub release or installer has been published.
+Current release: **[v0.2.1](https://github.com/EnesGoker/Numtilo/releases/tag/v0.2.1)**.
+
+## Download and play
+
+**You do not need to build from source to play.** Download the ZIP for your platform
+from the [v0.2.1 release](https://github.com/EnesGoker/Numtilo/releases/tag/v0.2.1).
+These are ZIP archives, not installers. Extract the entire archive before opening
+the application; keep the supplied assets and libraries in their extracted locations.
+
+| Platform | Download | Run after extracting |
+| --- | --- | --- |
+| macOS ARM64 (Apple Silicon) | [macOS ZIP](https://github.com/EnesGoker/Numtilo/releases/download/v0.2.1/Numtilo-0.2.1-darwin-arm64.zip) | Open `Numtilo.app` in Finder. |
+| Windows x64 | [Windows ZIP](https://github.com/EnesGoker/Numtilo/releases/download/v0.2.1/Numtilo-windows-latest.zip) | Open `Numtilo.exe`; a console window also opens. |
+| Linux x86_64 | [Linux ZIP](https://github.com/EnesGoker/Numtilo/releases/download/v0.2.1/Numtilo-0.2.1-linux-x86_64.zip) | Run `./numtilo` from the extracted folder; if needed, first use `chmod +x numtilo`. |
+
+The macOS package is not Developer ID signed or notarized; macOS security checks
+may block a downloaded copy. Linux desktop gameplay has not yet received manual
+acceptance; automated checks do not establish compatibility with every distribution.
 
 ## Features
 
@@ -54,7 +71,7 @@ The leaderboard below shows a completed game from an isolated Demo profile.
 During play, Enter starts a new round when no control or accessible board has focus.
 Mouse clicks operate controls; the window close control exits. WASD is not bound.
 
-## Build and run
+## Build and run from source (optional)
 
 For the vcpkg route below, use **Git**, **CMake 3.24+**, a **C++20 compiler** and a
 [vcpkg](https://github.com/microsoft/vcpkg) checkout outside this source tree.
@@ -109,16 +126,17 @@ audio playback or save permissions.
 
 ## Platform status
 
-- **macOS arm64:** an isolated Release build, CLI/runtime checks and application
-  launch/normal exit were accepted. The Dock icon was manually confirmed;
-  Finder's large icon view remains unverified.
-- **Windows / Linux:** source and build configurations are present; current native
-  execution and icon acceptance remain pending.
+- **macOS ARM64:** a downloadable Release ZIP is available and manual gameplay
+  acceptance is complete. Developer ID signing and notarization are not provided.
+- **Windows x64:** the Release ZIP was run in a Windows virtual machine; the user
+  verified screens, controls and sounds. A console window opens alongside the game.
+- **Linux x86_64:** a downloadable ZIP is available and automated tests passed;
+  manual acceptance on a real desktop remains pending.
 
 The macOS VoiceOver adapter is implemented; [historical accessibility evidence](docs/ui-quality-audit.md)
 does not establish a complete post-rename GUI/VoiceOver pass. Windows/Linux screen
-reader adapters are not implemented. GitHub Actions workflows are defined;
-successful runs in a new Numtilo repository are not claimed.
+reader adapters are not implemented. GitHub CI and Release workflows completed
+successfully for v0.2.1; this does not replace the pending Linux desktop acceptance.
 
 ## Tests
 

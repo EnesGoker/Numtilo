@@ -13,7 +13,25 @@ oyunudur. Eşit değerli karoları kaydırarak birleştirin, puan kazanın ve 20
   <img src="docs/images/numtilo-game.png" alt="Numtilo'nun gerçek oyun ekranı: 4×4 tahta, Demo oyuncusu ve 140 puan" width="720" />
 </p>
 
-Kaynak kod sürümü: **0.2.1**. Henüz Numtilo için GitHub release'i veya kurulum programı yayımlanmadı.
+Güncel yayın: **[v0.2.1](https://github.com/EnesGoker/Numtilo/releases/tag/v0.2.1)**.
+
+## İndir ve oyna
+
+**Oynamak için kaynak koddan derleme yapmanız gerekmez.** Platformunuza uygun ZIP'i
+[v0.2.1 yayınından](https://github.com/EnesGoker/Numtilo/releases/tag/v0.2.1) indirin.
+Bunlar kurulum programı değil, ZIP arşivleridir. Uygulamayı açmadan önce arşivin
+tamamını çıkarın; paketle gelen asset ve kütüphaneleri çıkarıldıkları konumlarda koruyun.
+
+| Platform | İndir | Çıkardıktan sonra çalıştırma |
+| --- | --- | --- |
+| macOS ARM64 (Apple Silicon) | [macOS ZIP](https://github.com/EnesGoker/Numtilo/releases/download/v0.2.1/Numtilo-0.2.1-darwin-arm64.zip) | Finder'da `Numtilo.app` dosyasını açın. |
+| Windows x64 | [Windows ZIP](https://github.com/EnesGoker/Numtilo/releases/download/v0.2.1/Numtilo-windows-latest.zip) | `Numtilo.exe` dosyasını açın; ayrıca bir konsol penceresi açılır. |
+| Linux x86_64 | [Linux ZIP](https://github.com/EnesGoker/Numtilo/releases/download/v0.2.1/Numtilo-0.2.1-linux-x86_64.zip) | Çıkarılan klasörde `./numtilo` çalıştırın; gerekirse önce `chmod +x numtilo` kullanın. |
+
+macOS paketinde Developer ID imzası ve Apple noter onayı yoktur; macOS güvenlik
+kontrolleri internetten indirilen kopyayı engelleyebilir. Linux'ta gerçek masaüstü
+oyun deneyiminin manuel kabulü henüz yapılmadı; otomatik kontroller her dağıtımla
+uyumluluk garantisi vermez.
 
 ## Özellikler
 
@@ -55,7 +73,7 @@ Aşağıdaki skor tablosu, gerçek kullanıcı verisi yerine izole Demo profilin
 Oyun sırasında hiçbir kontrol veya erişilebilir oyun tahtası odakta değilken Enter yeni tur başlatır.
 Fare tıklamaları kontrolleri çalıştırır; pencereyi kapatma düğmesi uygulamadan çıkarır. WASD desteği yoktur.
 
-## Derleme ve çalıştırma
+## Kaynak koddan derleme ve çalıştırma (isteğe bağlı)
 
 Aşağıdaki vcpkg yöntemi için **Git**, **CMake 3.24+**, bir **C++20 derleyicisi** ve
 bu kaynak ağacı dışında bir [vcpkg](https://github.com/microsoft/vcpkg) kopyası gerekir.
@@ -109,19 +127,17 @@ izinlerini test etmez.
 
 ## Platform durumu
 
-- **macOS arm64:** izole Release derlemesi, CLI/runtime kontrolleri, uygulamanın
-  açılması ve normal kapanışı kabul edildi. Dock ikonu elle doğrulandı;
-  Finder'ın büyük ikon görünümü henüz doğrulanmadı.
-- **Windows:** kaynak ve derleme yapılandırmaları ile ikon/resource entegrasyonu
-  mevcut; güncel gerçek çalıştırma ve ikon kabulü henüz yapılmadı.
-- **Linux:** kaynak ve derleme yapılandırmaları ile pencere ikonu entegrasyonu
-  mevcut; güncel gerçek çalıştırma ve ikon kabulü henüz yapılmadı.
-  Masaüstü kurulum entegrasyonu tamamlanmadı.
+- **macOS ARM64:** indirilebilir Release ZIP'i mevcut ve manuel oyun kabulü
+  tamamlandı. Developer ID imzası ve Apple noter onayı sağlanmıyor.
+- **Windows x64:** Release ZIP'i sanal Windows makinesinde çalıştırıldı; ekranlar,
+  kontroller ve sesler kullanıcı tarafından doğrulandı. Oyunla birlikte konsol penceresi açılıyor.
+- **Linux x86_64:** indirilebilir ZIP mevcut ve otomatik testler başarılı;
+  gerçek masaüstünde manuel kabul henüz yapılmadı.
 
 macOS VoiceOver bağdaştırıcısı uygulanmıştır; [tarihî erişilebilirlik kanıtları](docs/ui-quality-audit.md),
 ad geçişi sonrasında tam bir GUI/VoiceOver doğrulaması yapıldığını göstermez.
-Windows/Linux ekran okuyucu bağdaştırıcıları uygulanmamıştır. GitHub Actions iş
-akışları tanımlıdır; henüz oluşturulmamış yeni Numtilo deposunda başarılı çalıştırma iddiası yoktur.
+Windows/Linux ekran okuyucu bağdaştırıcıları uygulanmamıştır. GitHub CI ve Release
+iş akışları v0.2.1 için başarıyla tamamlandı; bu sonuç, bekleyen Linux masaüstü kabulünün yerine geçmez.
 
 ## Testler
 

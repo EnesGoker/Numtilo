@@ -7,8 +7,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-Earlier entries retain the names used when those changes were introduced. The current
-Numtilo identity is recorded under Changed; no version bump or new release is implied.
+No unreleased changes are recorded here yet.
+
+## [0.2.1] - 2026-10-20
+
+### Release
+- Published [Numtilo v0.2.1](https://github.com/EnesGoker/Numtilo/releases/tag/v0.2.1)
+  on GitHub with macOS ARM64, Windows x64 and Linux x86_64 ZIP packages, not installers.
+- This release includes the Numtilo name and technical identity, approved logo and
+  platform icons, Turkish interface and UI improvements, and Kenney CC0 sound effects.
+- GitHub CI and Release workflows completed successfully. macOS gameplay was manually
+  accepted; the Windows Release ZIP's screens, controls and sounds were verified by
+  the user in a Windows virtual machine. Linux automated tests passed; real-desktop
+  manual acceptance remains pending.
+- Known limitations: Windows opens a console window alongside the game; the macOS
+  package is not Developer ID signed or notarized.
+
+The detailed development record below is included in this release. Historical names,
+intermediate states and checkpoint verification limits are retained as recorded;
+the publication date does not imply a new full regression run.
 
 ### Added
 - Opt-in maintained graphical acceptance with system/vcpkg Release presets, current
@@ -127,7 +144,7 @@ Numtilo identity is recorded under Changed; no version bump or new release is im
   sources. Updated test identities and the exact `.numtilo-acceptance` marker protocol.
 - Aligned current documentation with these names while retaining historical evidence.
   Updated CPack, release ZIP and source archive names to `Numtilo`. The approved logo
-  and application icons are integrated; a new Numtilo repository/release remains pending.
+  and application icons are integrated in the published Numtilo v0.2.1 release.
 - macOS semantic focus refreshes independently of unchanged-snapshot deduplication,
   outside the request-queue mutex and only from known native responders. A repeated
   real-click/VoiceOver regression verifies the Name field keeps its accessible focus;
@@ -270,7 +287,10 @@ Numtilo identity is recorded under Changed; no version bump or new release is im
 - Committed build artifacts (`*.o`, local binaries, `.DS_Store`).
 - Legacy Makefile with machine-specific Homebrew include/library paths.
 
-## [0.2.1] - 2026-02-23
+## Historical pre-Numtilo record — 0.2.1 — 2026-02-23
+
+This earlier development record retains its original date; the GitHub v0.2.1
+publication is recorded above on 2026-10-20.
 
 ### Changed
 - CMake post-build asset copy command now uses explicit quoting and `VERBATIM` for safer cross-platform path handling.
