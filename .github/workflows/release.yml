@@ -283,7 +283,7 @@ jobs:
       contents: write
     steps:
       - name: Download package artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: package-*
