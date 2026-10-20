@@ -9,6 +9,33 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 No unreleased changes are recorded here yet.
 
+## [0.2.2] - 2026-10-21
+
+Maintenance release for runtime packaging and documentation; no gameplay or UI changes.
+
+### Fixed
+- Exclude Windows system and API-set DLLs from runtime packages while preserving
+  SFML, OpenAL, MSVC redistributables and other required third-party libraries.
+- Exclude Linux glibc and ELF loader components without broadly removing required
+  third-party libraries from system library directories.
+- Resolve library symlinks and parent junctions before checking package containment.
+- Accept conflicting Linux package/system library copies only when every copy has
+  the same SHA-256 content and the packaged companion remains inside the package.
+
+### Changed
+- Add focused packaging regression controls to CTest and the existing CI/Release
+  checks for installed runtimes and extracted packages. Failed dependency checks
+  now expose diagnostics, with CI reports and command logs retained as artifacts.
+- Refresh contributing links, security reporting instructions and the bug-report
+  version example. Update bilingual downloads and runtime notes for 0.2.2.
+
+### Validation
+- The user reports manual gameplay acceptance of the macOS ARM64, Windows x64 and
+  Linux x86_64 ZIPs in virtual machines. This is user-reported acceptance, separate
+  from automated package checks.
+- Existing limitations remain: Windows also opens a console window; macOS packages
+  are not Developer ID signed or notarized.
+
 ## [0.2.1] - 2026-10-20
 
 ### Release

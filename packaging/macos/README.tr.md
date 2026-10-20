@@ -1,6 +1,6 @@
 [English](README.md) | [Türkçe](README.tr.md)
 
-# Numtilo 0.2.1 — macOS
+# Numtilo 0.2.2 — macOS
 
 ZIP'in tamamını çıkarın, ardından Finder'da **Numtilo.app** dosyasına çift tıklayın.
 Oynamak için terminal, VS Code, CMake veya Homebrew gerekmez.
